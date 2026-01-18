@@ -69,47 +69,117 @@ function isArticleUrl(url: string): boolean {
   return url.includes('/i/article/');
 }
 
-async function fetchTweetData(tweetId: string): Promise<TweetData> {
-  const syndicationUrl = `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=0`;
+async function scrapeTweet(tweetUrl: string, auth: AuthCookies): Promise<TweetData> {
+  const browser = await getBrowser();
 
-  const response = await fetch(syndicationUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'application/json',
-    },
-  });
+  try {
+    const page = await browser.newPage();
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch tweet: ${response.status}`);
-  }
+    await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1200, height: 800 });
 
-  const data = await response.json();
-
-  const images: string[] = [];
-  if (data.mediaDetails) {
-    for (const media of data.mediaDetails) {
-      if (media.type === 'photo' && media.media_url_https) {
-        images.push(`${media.media_url_https}?format=jpg&name=large`);
-      }
+    // Set auth cookies
+    const cookies = [];
+    if (auth.authToken) {
+      cookies.push({
+        name: 'auth_token',
+        value: auth.authToken,
+        domain: '.x.com',
+        path: '/',
+        httpOnly: true,
+        secure: true,
+      });
     }
-  }
-
-  if (data.photos) {
-    for (const photo of data.photos) {
-      if (photo.url && !images.some(img => img.includes(photo.url.split('?')[0]))) {
-        images.push(photo.url);
-      }
+    if (auth.csrfToken) {
+      cookies.push({
+        name: 'ct0',
+        value: auth.csrfToken,
+        domain: '.x.com',
+        path: '/',
+        secure: true,
+      });
     }
-  }
+    if (cookies.length > 0) {
+      await page.setCookie(...cookies);
+    }
 
-  return {
-    authorName: data.user?.name || 'Unknown',
-    authorHandle: `@${data.user?.screen_name || 'unknown'}`,
-    authorAvatar: data.user?.profile_image_url_https?.replace('_normal', '_400x400') || null,
-    text: data.text || '',
-    date: data.created_at || '',
-    images,
-  };
+    await page.goto(tweetUrl, {
+      waitUntil: 'networkidle2',
+      timeout: 30000,
+    });
+
+    // Wait for tweet content to load
+    await page.waitForSelector('article', { timeout: 15000 }).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const tweetData = await page.evaluate(() => {
+      const article = document.querySelector('article');
+      if (!article) return null;
+
+      // Get author info
+      let authorName = '';
+      let authorHandle = '';
+      let authorAvatar = '';
+
+      const avatarImg = article.querySelector('img[src*="profile_images"]');
+      if (avatarImg) {
+        authorAvatar = (avatarImg as HTMLImageElement).src.replace('_normal', '_400x400');
+      }
+
+      // Get author name and handle from the tweet
+      const userLinks = article.querySelectorAll('a[href*="/"]');
+      for (const link of Array.from(userLinks)) {
+        const href = (link as HTMLAnchorElement).href;
+        if (href.match(/x\.com\/\w+$/) && !href.includes('/i/')) {
+          const text = link.textContent?.trim() || '';
+          if (text.startsWith('@')) {
+            authorHandle = text;
+          } else if (text && !authorName && text.length < 50) {
+            authorName = text;
+          }
+          if (authorName && authorHandle) break;
+        }
+      }
+
+      // Get tweet text
+      const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
+      const text = tweetTextEl?.textContent?.trim() || '';
+
+      // Get images
+      const images: string[] = [];
+      const imgElements = article.querySelectorAll('img[src*="pbs.twimg.com/media"]');
+      for (const img of Array.from(imgElements)) {
+        const src = (img as HTMLImageElement).src;
+        if (src && !images.includes(src)) {
+          images.push(src);
+        }
+      }
+
+      // Get date
+      const timeEl = article.querySelector('time');
+      const date = timeEl?.getAttribute('datetime') || '';
+
+      return {
+        authorName,
+        authorHandle,
+        authorAvatar,
+        text,
+        date,
+        images,
+      };
+    });
+
+    await browser.close();
+
+    if (!tweetData) {
+      throw new Error('Could not extract tweet content');
+    }
+
+    return tweetData;
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
 }
 
 interface AuthCookies {
@@ -658,7 +728,15 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const tweetData = await fetchTweetData(tweetId);
+      // Tweets now require authentication
+      if (!authToken) {
+        return NextResponse.json(
+          { error: 'Authentication required. Please provide your auth_token cookie.' },
+          { status: 400 }
+        );
+      }
+
+      const tweetData = await scrapeTweet(url, { authToken, csrfToken });
 
       if (!tweetData.text && tweetData.images.length === 0) {
         return NextResponse.json(

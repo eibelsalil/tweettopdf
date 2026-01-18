@@ -6,7 +6,7 @@ export default function Home() {
   const [url, setUrl] = useState('');
   const [authToken, setAuthToken] = useState('');
   const [csrfToken, setCsrfToken] = useState('');
-  const [showAuth, setShowAuth] = useState(false);
+  const [showAuth, setShowAuth] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -84,11 +84,9 @@ export default function Home() {
             />
           </div>
 
-          {isArticleUrl && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm">
-              Articles require authentication. Please provide your auth cookies below.
-            </div>
-          )}
+          <div className="p-3 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-sm">
+            Authentication required. Please provide your auth cookies below.
+          </div>
 
           <div>
             <button
@@ -104,7 +102,7 @@ export default function Home() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              {showAuth ? 'Hide' : 'Show'} authentication (for articles)
+              {showAuth ? 'Hide' : 'Show'} authentication
             </button>
 
             {showAuth && (
@@ -184,7 +182,7 @@ export default function Home() {
         </form>
 
         <p className="mt-6 text-center text-sm text-gray-500">
-          Supports tweets and articles. Articles require auth cookies.
+          Supports tweets and articles. Auth cookies required.
         </p>
       </div>
     </main>

@@ -682,8 +682,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('PDF conversion error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to convert to PDF. Please try again.' },
+      { error: `Failed to convert to PDF: ${errorMessage}` },
       { status: 500 }
     );
   }

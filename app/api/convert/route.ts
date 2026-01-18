@@ -372,7 +372,21 @@ async function scrapeArticle(articleUrl: string, auth?: AuthCookies): Promise<Ar
           // Get text content
           const text = el.textContent?.trim();
           if (!text || text.length < 3) continue;
-          if (seenTexts.has(text)) continue;
+
+          // Normalize text for deduplication (remove extra whitespace)
+          const normalizedText = text.replace(/\s+/g, ' ').toLowerCase();
+          if (seenTexts.has(normalizedText)) continue;
+
+          // Also check if this text is a substring of already seen text (to catch partial duplicates)
+          let isDuplicate = false;
+          for (const seen of Array.from(seenTexts)) {
+            if (seen.includes(normalizedText) || normalizedText.includes(seen)) {
+              isDuplicate = true;
+              break;
+            }
+          }
+          if (isDuplicate) continue;
+
           if (skipPatterns.some(p => p.test(text))) continue;
           if (text === authorName || text === authorHandle || text === title) continue;
 
@@ -411,12 +425,24 @@ async function scrapeArticle(articleUrl: string, auth?: AuthCookies): Promise<Ar
           const hasBlockChildren = el.querySelector('p, div, h1, h2, h3, h4');
           if (hasBlockChildren && tagName === 'DIV') continue;
 
-          seenTexts.add(text);
+          seenTexts.add(normalizedText);
+
+          // Get HTML content to preserve links
+          let htmlContent = '';
+          const links = el.querySelectorAll('a');
+          if (links.length > 0) {
+            // Element has links - preserve them
+            htmlContent = (el as HTMLElement).innerHTML
+              .replace(/<(?!a\s|\/a>)[^>]+>/g, '') // Remove all tags except <a> and </a>
+              .trim();
+          } else {
+            htmlContent = text;
+          }
 
           if (isHeadingTag || isStyledAsHeading) {
-            content.push({ type: 'text', value: '## ' + text });
+            content.push({ type: 'text', value: '## ' + htmlContent });
           } else {
-            content.push({ type: 'text', value: text });
+            content.push({ type: 'text', value: htmlContent });
           }
         }
 
@@ -571,6 +597,17 @@ function generateTweetHTML(tweetData: TweetData): string {
 </html>`;
 }
 
+function processTextWithLinks(text: string): string {
+  // If text contains <a> tags, preserve them but escape other content
+  if (text.includes('<a ')) {
+    // Extract and preserve links, escape other parts
+    return text
+      .replace(/&(?!amp;|lt;|gt;|quot;|#039;)/g, '&amp;')
+      .replace(/\n/g, '<br>');
+  }
+  return escapeHtml(text);
+}
+
 function generateArticleHTML(articleData: ArticleData): string {
   const contentHtml = articleData.content
     .map(item => {
@@ -580,9 +617,9 @@ function generateArticleHTML(articleData: ArticleData): string {
         const isHeading = item.value.startsWith('## ');
         const text = isHeading ? item.value.slice(3) : item.value;
         if (isHeading) {
-          return `<h2 style="font-size: 22px; font-weight: 700; margin: 28px 0 14px 0; color: #0f1419; line-height: 1.3;">${escapeHtml(text)}</h2>`;
+          return `<h2 style="font-size: 22px; font-weight: 700; margin: 28px 0 14px 0; color: #0f1419; line-height: 1.3;">${processTextWithLinks(text)}</h2>`;
         } else {
-          return `<p style="font-size: 16px; line-height: 1.7; margin-bottom: 16px; color: #0f1419; font-weight: 400;">${escapeHtml(text)}</p>`;
+          return `<p style="font-size: 16px; line-height: 1.7; margin-bottom: 16px; color: #0f1419; font-weight: 400;">${processTextWithLinks(text)}</p>`;
         }
       }
     })
@@ -610,6 +647,8 @@ function generateArticleHTML(articleData: ArticleData): string {
     .author-handle { font-size: 14px; color: #536471; }
     .article-title { font-size: 32px; font-weight: 800; margin-bottom: 24px; line-height: 1.2; color: #0f1419; }
     .article-date { font-size: 14px; color: #536471; margin-top: 24px; padding-top: 16px; border-top: 1px solid #eff3f4; }
+    a { color: #1d9bf0; text-decoration: none; }
+    a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>

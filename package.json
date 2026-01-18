@@ -11,6 +11,7 @@
   "dependencies": {
     "@sparticuz/chromium": "^143.0.4",
     "@types/pdfkit": "^0.17.4",
+    "html-pdf-node": "^1.0.8",
     "next": "^14.2.0",
     "pdfkit": "^0.17.2",
     "puppeteer": "^22.0.0",

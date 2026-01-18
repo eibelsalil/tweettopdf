@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     fonts-thai-tlwg \
     fonts-kacst \
     fonts-freefont-ttf \
+    libxss1 \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,7 +22,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --only=production
 
 # Copy application code
 COPY . .
@@ -30,7 +31,7 @@ COPY . .
 RUN npm run build
 
 # Expose port
-EXPOSE 3000
+EXPOSE 10000
 
 # Start the application
 CMD ["npm", "start"]
